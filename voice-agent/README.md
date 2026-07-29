@@ -82,68 +82,83 @@ Extra scripts:
 
 ## Decisions & tradeoffs
 
-**What I chose**
+**Why I built it this way**
 
-- **A roll-your-own pipeline (Groq → GPT-4o-mini → ElevenLabs), not a single-vendor
-  realtime API.** Each stage was picked for what it's actually responsible for, not
-  just speed: Groq for the fastest speech-to-text available (it's on the critical
-  path of every turn), GPT-4o-mini for tool-calling because a wrong tool call or a
-  guessed answer is a hard failure — accuracy of that decision mattered more than
-  shaving off latency there — and ElevenLabs because voice quality is literally what
-  the caller judges the whole experience by.
-- **Because that choice makes this a turn-based pipeline, not a full-duplex socket,
-  "feels natural" had to be engineered deliberately**: one persistent WebSocket per
-  conversation (not a REST call per turn) streaming typed events as they happen,
-  sentence-by-sentence TTS so playback starts before the full answer is ready, and
-  pre-cached, zero-latency filler lines (a greeting, "let me check that" before the
-  slow quote call, "didn't catch that," and a goodbye) so nothing ever sits in
-  silence.
-- **Auto-stop-on-silence** for turn-taking (client-side voice detection), over an
-  explicit click-to-stop or push-to-talk — closer to a real phone call, at the cost
-  of occasionally needing a moment of real speech before it starts the silence timer.
-- **A deterministic voice hangup** ("stop," "goodbye," "hang up," etc. end the call
-  immediately, without going through the LLM at all) — a caller shouldn't be at the
-  mercy of whether the model happens to end the conversation instead of just replying
-  "okay!" and looping.
-- **No automatic retry on a failed quote.** The mock's failure gate is only
-  discoverable after its full 4–16s delay, so a silent retry could cost 30+ seconds
-  inside one turn. Instead it fails honestly right away and only retries if the
-  caller asks it to.
-- **Strict grounding, enforced structurally, not just by prompt.** All 6 tools are
-  read-only and return a consistent `{ok, code, message}` shape so "not found" is
-  handled the same way everywhere; there is no `book`/`booking` tool defined
-  anywhere in the code, so the guardrail can't be prompted around.
-- **Every key stays server-side.** The browser only ever exchanges audio bytes and
-  JSON events with this app's own WebSocket — it never holds a Groq, OpenAI,
-  ElevenLabs, or Warp key.
-- **Dependency-free logging.** Every turn is appended to `logs/events.jsonl`
-  (transcript, tool calls, per-stage latency), with `npm run stats` and
-  `npm run transcripts` on top — enough to answer "how many calls this week, what did
-  people ask" without standing up a database for a take-home.
+Instead of using one all-in-one voice service, I picked three different specialists
+and connected them myself: Groq for turning speech into text (it's the fastest one
+out there, and speed here matters because it's the very first thing that happens on
+every single turn), GPT-4o-mini as the "brain" that figures out what you're actually
+asking and decides which lookup to run, and ElevenLabs for the voice itself, because
+the way it sounds is genuinely the biggest part of whether this feels like a real
+assistant or a robot. I picked GPT-4o-mini over faster alternatives on purpose —
+getting the decision right (not guessing, not calling the wrong lookup) mattered more
+to me than shaving off a few hundred milliseconds.
 
-**What I cut**
+The catch with stitching three separate services together myself, instead of using
+one service that does everything, is that it naturally works in "turns" — you talk,
+then it thinks, then it replies — more like a walkie-talkie than a phone call unless
+you're careful. So I put real effort into hiding that: the moment you finish talking,
+things start streaming back to you piece by piece instead of making you wait for the
+whole answer, and for the one thing that's genuinely slow (getting a shipping rate,
+which can take up to 15 seconds because that's how the practice system behaves), it
+immediately says "let me check that for you" instead of leaving you in silence.
+Little touches like the greeting, the goodbye, and "sorry, I didn't catch that" are
+also pre-recorded ahead of time so they play back instantly with zero delay.
 
-- **Barge-in / interrupting the agent mid-sentence.** Listed as optional stretch in
-  the brief; in a turn-based architecture it requires real extra engineering
-  (detecting speech while the agent's own audio is playing, cutting playback,
-  restarting capture) for less payoff than the streaming/filler-line work above.
-- **A phone number (Twilio).** A full second telephony surface — not a reasonable
-  scope addition for a half-day build.
-- **Deployment.** Not required for submission, and this app currently has no
-  auth or rate limiting — a public URL would expose paid API keys to anyone who
-  found it. Kept local rather than rush that safely.
+A few other choices worth calling out in plain terms:
 
-**What I'd do next with more time**
+- **It stops listening when you stop talking**, the same way a person would notice a
+  pause in conversation, rather than making you press a button every time. The
+  tradeoff is it needs a beat of real speech before it starts that countdown, so it
+  doesn't cut you off the moment you start a sentence.
+- **Saying "stop" or "goodbye" always ends the call immediately**, no matter what.
+  I didn't want to leave that up to the AI's judgment — it's a fixed rule in the
+  code, not something the AI decides on the fly, so it can't get confused and just
+  keep chatting when you're trying to leave.
+- **If a rate lookup fails, it tells you right away instead of quietly retrying.**
+  The practice system it's built against is deliberately slow and occasionally
+  flaky, and silently trying again could mean 30+ seconds of dead silence. I'd
+  rather it be honest and fast ("that didn't work, want me to try again?") than
+  quietly stall.
+- **It genuinely can't invent an answer, even if it wanted to.** Every fact it says
+  out loud — a status, a price, an invoice total — has to come from an actual lookup
+  first. And there's no "booking" capability anywhere in the code at all, not even
+  a disabled one, so there's no way for it to ever claim to have booked something.
+- **None of your API keys ever reach the browser.** Everything that costs money or
+  needs a password lives only on the server side; what your browser talks to is
+  just this app's own connection, nothing else.
+- **Every conversation gets saved.** Not to train anything or spy — just a plain
+  text log of what was asked and how it went, so I (or anyone reviewing this) can
+  answer "how many people used it, and what did they ask for" honestly.
 
-- Add barge-in, closing the remaining gap with a full-duplex realtime pipeline.
-- Before any public deploy: a shared password gate, per-IP rate limiting, and an
-  OpenAI spend limit — all straightforward, just not done yet.
-- Move tool execution/session state off in-memory-per-connection and onto something
-  resumable, so a dropped connection mid-call doesn't strand a caller.
-- Real telemetry instead of a JSONL file once call volume actually justifies it.
-- Tighter ID confirmation — spell back an ambiguous-sounding ID before calling a
-  tool, not just when its shape is obviously wrong (a normalization pass already
-  repairs the common speech-to-text mangling of dashes/spacing, found and fixed
-  during testing).
-- Re-validate the retry/timeout budgets against a real Warp API once a key is
-  available — they're currently tuned to the mock's documented 4–16s/~15% behavior.
+**What I chose not to build**
+
+A few things from the "nice to have" list I deliberately left out, given the time I
+had:
+
+- **Being able to interrupt it mid-sentence.** Genuinely useful, but meaningfully
+  more work in this kind of setup, and I judged the streaming/no-dead-air work above
+  as the better use of the time available.
+- **A real phone number you could call.** That's a whole separate system on its own
+  (think of it like building a second app), not something that fits in this scope.
+- **Putting it on the internet with a public link.** It works great locally, but as
+  built it has no login and no usage limits — if I put a public link out there as-is,
+  anyone who found it could rack up charges on my own API accounts. Rather than rush
+  that part and get it wrong, I kept it local.
+
+**What I'd do with more time**
+
+- Add the mid-sentence interruption feature mentioned above.
+- Before ever making it public: a simple password, a limit on how often one person
+  can use it, and a spending cap on my OpenAI account, just as a safety net.
+- Make it recover more gracefully if the connection drops mid-conversation, instead
+  of just losing that in-progress turn.
+- Swap the simple text-file logging for something more like a proper database, once
+  there's enough real usage to justify it.
+- Get even better at handling misheard words — right now it already fixes common
+  speech-to-text mistakes (like "O-1002" coming through as "01002," or a tracking
+  number's last two letters getting dropped — both real bugs I found and fixed while
+  testing), and I'd keep sanding down edge cases like that.
+- Once there's a real Warp API to test against (instead of the practice version),
+  double check my timing assumptions still hold — right now they're tuned to exactly
+  how the practice version behaves.
