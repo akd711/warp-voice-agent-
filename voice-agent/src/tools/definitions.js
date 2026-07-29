@@ -13,6 +13,7 @@ import {
   roundUsd,
   looksLikeValidId,
   normalizeIdCandidate,
+  repairMisheardOrderId,
   normalizeQuoteOptions,
 } from '../warp/normalize.js';
 
@@ -194,7 +195,7 @@ export const tools = [
       required: ['orderId'],
     },
     async handler({ orderId }) {
-      const normalized = normalizeIdCandidate(orderId);
+      const normalized = repairMisheardOrderId(normalizeIdCandidate(orderId));
       if (!looksLikeValidId('orderId', normalized)) {
         return fail('invalid_format', `"${orderId}" doesn't look like an order ID — they're usually shaped like O-1001.`);
       }
@@ -227,7 +228,7 @@ export const tools = [
       required: ['orderId'],
     },
     async handler({ orderId }) {
-      const normalized = normalizeIdCandidate(orderId);
+      const normalized = repairMisheardOrderId(normalizeIdCandidate(orderId));
       if (!looksLikeValidId('orderId', normalized)) {
         return fail('invalid_format', `"${orderId}" doesn't look like an order ID — they're usually shaped like O-1001.`);
       }

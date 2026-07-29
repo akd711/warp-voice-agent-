@@ -37,10 +37,18 @@ function trimHistory(messages) {
   return [messages[0], ...messages.slice(messages.length - (MAX_HISTORY_MESSAGES - 1))];
 }
 
+// If the mic can't get a clean read this many times in a row (silence, background
+// noise, a hallucinated transcript that slips past stt.js's own filtering), end the
+// call instead of letting it loop indefinitely — belt-and-suspenders on top of the
+// hallucination detection in stt.js, and a real safety net against a stuck mic
+// (e.g. audio feeding back into it) burning API calls on nothing.
+const MAX_CONSECUTIVE_MISSES = 3;
+
 export function handleConnection(ws) {
   const sessionId = randomUUID();
   let mimeType = 'audio/webm';
   let messages = [{ role: 'system', content: buildSystemPrompt() }];
+  let consecutiveMisses = 0;
 
   logEvent({ type: 'session_start', sessionId });
   send(ws, { type: 'connected', sessionId });
@@ -101,10 +109,25 @@ export function handleConnection(ws) {
     const { text, isMeaningful, latencyMs: sttMs } = await stt.transcribe(audioBuffer, { mimeType });
 
     if (!isMeaningful) {
+      consecutiveMisses += 1;
+      if (consecutiveMisses >= MAX_CONSECUTIVE_MISSES) {
+        await sendCachedLine('trouble_hearing', "I'm having trouble hearing you clearly, so I'll end the call here — feel free to start a new one anytime.");
+        send(ws, { type: 'session_ending' });
+        logEvent({
+          type: 'turn',
+          sessionId,
+          transcript: text,
+          assistantText: '(ended after repeated unclear audio)',
+          toolCalls: [],
+          timings: { sttMs, totalMs: Date.now() - turnStart },
+        });
+        return;
+      }
       await sendCachedLine('didnt_catch', "Sorry, I didn't catch that — go ahead.");
       send(ws, { type: 'turn_complete', timings: { sttMs, totalMs: Date.now() - turnStart }, skipped: true });
       return;
     }
+    consecutiveMisses = 0;
 
     send(ws, { type: 'transcript', text });
 

@@ -29,6 +29,7 @@ warmFillerCache({
   quote_filler: 'Let me check rates on that lane — one moment.',
   didnt_catch: "Sorry, I didn't catch that — go ahead.",
   goodbye: 'Alright, take care — bye for now!',
+  trouble_hearing: "I'm having trouble hearing you clearly, so I'll end the call here — feel free to start a new one anytime.",
 }).catch((err) => {
   console.warn('[startup] could not pre-warm filler cache (check ELEVENLABS_API_KEY):', err.message);
 });

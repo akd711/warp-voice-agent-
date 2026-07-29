@@ -47,12 +47,15 @@ export async function getCachedAudio(key, text) {
   return result;
 }
 
+// Sequential on purpose: ElevenLabs' free tier caps concurrent requests (currently
+// 4), and firing every filler at once at startup can exceed that as more lines get
+// added. Startup isn't latency-sensitive, so there's no reason to risk it.
 export async function warmFillerCache(fillers) {
-  const results = await Promise.allSettled(Object.entries(fillers).map(([key, text]) => getCachedAudio(key, text)));
-  results.forEach((r, i) => {
-    if (r.status === 'rejected') {
-      const key = Object.keys(fillers)[i];
-      console.warn(`[startup] could not pre-warm filler "${key}" (check ELEVENLABS_API_KEY):`, r.reason.message);
+  for (const [key, text] of Object.entries(fillers)) {
+    try {
+      await getCachedAudio(key, text);
+    } catch (err) {
+      console.warn(`[startup] could not pre-warm filler "${key}" (check ELEVENLABS_API_KEY):`, err.message);
     }
-  });
+  }
 }

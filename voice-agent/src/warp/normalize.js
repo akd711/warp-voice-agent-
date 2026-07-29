@@ -89,6 +89,16 @@ export function normalizeIdCandidate(raw) {
   return parts.join('-');
 }
 
+// "O" (as in "O-1002") and the digit zero are spoken identically, so STT commonly
+// transcribes an order ID as pure digits ("01002") with no letter at all —
+// normalizeIdCandidate can't recover a prefix that was never there to begin with.
+// Order numbers in this system are always 4 digits, so a leading zero on an
+// all-digit candidate is a strong, narrow signal it's really a misheard "O-".
+export function repairMisheardOrderId(candidate) {
+  const m = /^0-?(\d{3,6})$/.exec(candidate);
+  return m ? `O-${m[1]}` : candidate;
+}
+
 // Sort cheapest-first (the mock returns options unsorted), default a missing
 // serviceLevel, and cap to the top N for voice brevity. Returns both the trimmed
 // list to speak and the full sorted list for logging.

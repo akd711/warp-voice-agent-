@@ -231,11 +231,19 @@ function startRecordingTurn() {
   runVad();
 }
 
+// Require this many consecutive 100ms samples above the threshold before counting
+// it as "you started talking" — filters out a brief click/pop/cough from arming
+// the silence timer (and, more importantly, from sending a near-instant blip of
+// audio to Whisper, which is exactly the kind of low-signal clip it tends to
+// hallucinate text from).
+const SUSTAINED_SPEECH_SAMPLES = 2;
+
 function runVad() {
   const data = new Uint8Array(analyser.fftSize);
   let hasSpoken = false;
   let lastVoiceAt = Date.now();
   const turnStartAt = Date.now();
+  let aboveThresholdStreak = 0;
 
   clearInterval(vadTimer);
   vadTimer = setInterval(() => {
@@ -250,8 +258,9 @@ function runVad() {
 
     const currentlySpeaking = rms > SPEECH_RMS_THRESHOLD;
     callButton.classList.toggle('user-speaking', currentlySpeaking);
+    aboveThresholdStreak = currentlySpeaking ? aboveThresholdStreak + 1 : 0;
 
-    if (currentlySpeaking) {
+    if (aboveThresholdStreak >= SUSTAINED_SPEECH_SAMPLES) {
       hasSpoken = true;
       lastVoiceAt = now;
     }
