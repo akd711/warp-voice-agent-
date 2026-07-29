@@ -1,131 +1,149 @@
-# Warp Work Trial — Support Voice Agent
+# Warp Freight — Voice Support Agent
 
-A half-day build (~4 hours). This is a real item off our roadmap — a voice agent our
-customers can talk to for support. We care far more about the decisions you make than
-about how many features you finish; a smaller thing done well beats a broad thing
-half-working.
+A browser voice agent for Warp freight support. You talk, it talks back — grounded in
+the local mock freight API, never in made-up data. It's read-only: it can look up a
+shipment's status, get a shipping rate, check an invoice, or pull a document link, but
+it never books anything.
 
-## What you're building
+## What it does
 
-A voice agent, in the browser, that a Warp customer can talk to about their freight.
-They speak; it answers out loud — **grounded in the freight API** (a local mock this
-round), not made up.
+- Live spoken conversation in the browser — mic in, voice out, no typing.
+- Answers are always backed by a real call to the Warp API (the local mock this
+  round): shipment tracking and history, recent shipments, freight quotes, invoices,
+  and documents (BOL/POD).
+- Handles the messy parts out loud: an unknown tracking/order number gets an honest
+  "I couldn't find that," a slow or failed rate lookup gets a spoken heads-up instead
+  of silence, and a misheard number gets read back for confirmation.
+- Every turn is logged (transcript, tool calls, latencies) to `logs/events.jsonl`.
 
-Examples of what a caller should be able to ask:
+## Pipeline, in short
 
-- "Where's my shipment S-…?" → live status and latest events
-- "What would it cost to ship two pallets from 90001 to 60601?" → a real rate
-- "What do I owe on order P-…?" → the invoice total
-- "Can you send me the BOL?" → the document link
-
-You build and test it in the browser (mic in, voice out). You'll submit a repo and a
-recording of an actual spoken conversation — see [`../SUBMISSION.md`](../SUBMISSION.md).
-
-## The stack
-
-For this round: the **Warp API is the local mock** (no Warp key needed). For the voice
-itself, use **any provider you have working access to** — OpenAI, ElevenLabs, Groq's free
-tier, local models, whatever gets you a working pipeline. Keep every key server-side.
-
-How you assemble them is up to you. Two reasonable paths:
-
-- **Roll your own pipeline** — OpenAI for speech-to-text and the reasoning/tool-calling
-  model, ElevenLabs for the spoken reply, wired together yourself.
-- **Use ElevenLabs' Conversational AI agent** — and give it custom tools (webhooks) that
-  hit a small Warp proxy you write.
-
-Either is fine. What is **not** optional: the agent must actually call the freight API
-and answer from what it returns. An agent that sounds great but invents shipment statuses
-fails the exercise.
-
-Because these speech and LLM APIs change often, work from your provider's current official
-docs rather than memory — checking the live docs is part of the job.
-
-## The Warp API — a local mock
-
-You build against the mock in [`../mock/`](../mock/README.md) — no Warp key this round:
-
-```bash
-node mock/server.js          # from the repo root; http://localhost:3001
+```
+Your voice
+   → browser records the turn, auto-stops when you stop talking
+   → sent to the backend over a WebSocket
+   → Groq transcribes it to text                      (speech-to-text)
+   → GPT-4o-mini decides what you're asking for        (the "brain")
+   → if it needs real data, it calls the Warp API       (tracking/quote/invoice/etc.)
+   → GPT-4o-mini turns the result into a spoken answer
+   → ElevenLabs turns that answer into audio, sentence by sentence
+   → played back to you in the browser
 ```
 
-- **Base URL:** `WARP_API_BASE_URL=http://localhost:3001`
-- Your server-side calls still send an `apikey` header; the mock ignores it.
-- **Read [`../mock/README.md`](../mock/README.md) first** — it's slow and flaky on
-  purpose, which is exactly what a voice agent has to survive gracefully.
+Every step above is timed and logged, and the one slow step (getting a shipping
+quote) gets a spoken "let me check that" the instant it starts, so there's no silent
+waiting.
 
-Read endpoints your agent will lean on:
+## Tech stack
 
-| Endpoint | Use |
-|---|---|
-| `POST /freights/tracking` | Status + location for a tracking number |
-| `GET /freights/events/:shipmentId` | A shipment's event timeline |
-| `GET /freights/shipments` | Recent shipments on the account |
-| `POST /freights/quote` (or `/freights/freight-quote`) | A rate for a lane |
-| `GET /freights/invoices/:orderId` | What's owed on an order |
-| `GET /freights/documents/:orderId` | BOL / POD links |
+- **Frontend** — plain HTML/CSS/JavaScript, no framework or build step. Uses the
+  browser's `MediaRecorder` and Web Audio API (for client-side voice-activity
+  detection) to capture a turn, and a WebSocket to talk to the backend.
+- **Backend** — Node.js, Express (serves the frontend + static files), `ws`
+  (WebSocket server that drives the whole conversation loop).
+- **Speech-to-text** — Groq's Whisper API.
+- **Reasoning / tool-calling** — OpenAI GPT-4o-mini.
+- **Text-to-speech** — ElevenLabs.
+- **Data source** — the local Warp mock API (`mock/server.js`, from the repo root).
+- **Logging** — a dependency-free append-only JSONL file; no database.
 
-Full docs: https://developer.wearewarp.com/docs/freight/
+## Running it locally
 
-## The parts that are actually hard
+**Prerequisites:** Node.js 20+, and your own API keys for Groq, OpenAI, and
+ElevenLabs (all have free/trial tiers).
 
-Read these before you start — they're the difference between a demo and a real agent.
+```bash
+# 1. From the repo root, start the Warp mock API
+node mock/server.js
 
-- **Latency and turn-taking.** A voice agent lives or dies on responsiveness. Stream the
-  pieces so it feels like a conversation, not a walkie-talkie, and ideally let the caller
-  interrupt (barge-in). Getting the round-trip to feel natural is the single most
-  important thing we're looking at.
-- **Grounding.** Every factual answer — a status, a price, a balance — must come from an
-  actual API call. If the mock returns `not_found` for a shipment, the agent says so or
-  asks for the number again. It never guesses.
-- **Recovery, out loud.** The caller mumbles a tracking number, the order doesn't exist,
-  the API times out — the agent handles it inside the conversation. No dead air, no crash.
-- **Guardrails.** The agent never books a shipment and never promises to, and never
-  invents a price or ETA. It's read-only support, up to the same line as everything else
-  here.
+# 2. In a new terminal, install and configure the voice agent
+cd voice-agent
+npm install
+cp .env.example .env
+# then open .env and fill in GROQ_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY
 
-## Requirements
+# 3. Start the server
+npm start
+```
 
-**Must have**
+Open **http://localhost:8787**, click the mic button, allow microphone access, and
+start talking. Try things like *"Where's my shipment S-1001-IN?"*, *"What would it
+cost to ship two pallets from 90001 to 60601?"*, *"What do I owe on order O-1001?"*,
+or *"Can you send me the documents for O-1002?"*
 
-- A working spoken conversation in the browser: you talk, it answers in voice.
-- At least **one** Warp tool wired and genuinely grounded — e.g. the agent tracks a real
-  shipment and reads back its real status.
-- Graceful recovery when things go wrong (mis-heard input, unknown order, API error),
-  handled in the conversation.
-- Every key stays server-side — never in the browser bundle, the repo, or a log.
-- **Every call is logged** (we ship nothing without usage data): the transcript, which
-  tools were called with what result, and the turn latencies. Any store is fine as long
-  as it could answer "how many calls this week, and what did people ask for."
-- A short README: how to run it, the decisions you made, and what you'd do next for
-  production.
+Extra scripts:
+- `npm run smoke` — exercises all 6 Warp tool handlers directly against the mock, no
+  voice involved. Good for quickly checking the API integration is healthy.
+- `npm run stats` — summarizes `logs/events.jsonl`: call counts per tool, error
+  rates, and latency percentiles per pipeline stage.
+- `npm run transcripts` — prints exactly what every caller said and how the agent
+  answered, conversation by conversation. This (plus the raw `logs/events.jsonl`
+  file) is where to see the actual data of what people have asked.
 
-**Stretch — pick what interests you; don't grind through all of it**
+## Decisions & tradeoffs
 
-- More than one tool (quote + track + invoice + documents).
-- Barge-in / interruption handling.
-- A live transcript UI beside the conversation.
-- A real phone number (Twilio) instead of the browser.
-- A latency budget with measured numbers, and what you did to hit it.
-- Deploy it and send a live URL.
+**What I chose**
 
-## Out of scope
+- **A roll-your-own pipeline (Groq → GPT-4o-mini → ElevenLabs), not a single-vendor
+  realtime API.** Each stage was picked for what it's actually responsible for, not
+  just speed: Groq for the fastest speech-to-text available (it's on the critical
+  path of every turn), GPT-4o-mini for tool-calling because a wrong tool call or a
+  guessed answer is a hard failure — accuracy of that decision mattered more than
+  shaving off latency there — and ElevenLabs because voice quality is literally what
+  the caller judges the whole experience by.
+- **Because that choice makes this a turn-based pipeline, not a full-duplex socket,
+  "feels natural" had to be engineered deliberately**: one persistent WebSocket per
+  conversation (not a REST call per turn) streaming typed events as they happen,
+  sentence-by-sentence TTS so playback starts before the full answer is ready, and
+  pre-cached, zero-latency filler lines (a greeting, "let me check that" before the
+  slow quote call, "didn't catch that," and a goodbye) so nothing ever sits in
+  silence.
+- **Auto-stop-on-silence** for turn-taking (client-side voice detection), over an
+  explicit click-to-stop or push-to-talk — closer to a real phone call, at the cost
+  of occasionally needing a moment of real speech before it starts the silence timer.
+- **A deterministic voice hangup** ("stop," "goodbye," "hang up," etc. end the call
+  immediately, without going through the LLM at all) — a caller shouldn't be at the
+  mercy of whether the model happens to end the conversation instead of just replying
+  "okay!" and looping.
+- **No automatic retry on a failed quote.** The mock's failure gate is only
+  discoverable after its full 4–16s delay, so a silent retry could cost 30+ seconds
+  inside one turn. Instead it fails honestly right away and only retries if the
+  caller asks it to.
+- **Strict grounding, enforced structurally, not just by prompt.** All 6 tools are
+  read-only and return a consistent `{ok, code, message}` shape so "not found" is
+  handled the same way everywhere; there is no `book`/`booking` tool defined
+  anywhere in the code, so the guardrail can't be prompted around.
+- **Every key stays server-side.** The browser only ever exchanges audio bytes and
+  JSON events with this app's own WebSocket — it never holds a Groq, OpenAI,
+  ElevenLabs, or Warp key.
+- **Dependency-free logging.** Every turn is appended to `logs/events.jsonl`
+  (transcript, tool calls, per-stage latency), with `npm run stats` and
+  `npm run transcripts` on top — enough to answer "how many calls this week, what did
+  people ask" without standing up a database for a take-home.
 
-The agent is read-only: it never calls `/book` or `/freights/booking` (the mock returns
-`403` anyway — that's the one action the real API gates, since it dispatches freight), and
-never claims it has booked something. Everything read-only is fair game. It also must not
-invent data to sound helpful; "I don't have that" is a correct answer.
+**What I cut**
 
-## What to hand in
+- **Barge-in / interrupting the agent mid-sentence.** Listed as optional stretch in
+  the brief; in a turn-based architecture it requires real extra engineering
+  (detecting speech while the agent's own audio is playing, cutting playback,
+  restarting capture) for less payoff than the streaming/filler-line work above.
+- **A phone number (Twilio).** A full second telephony surface — not a reasonable
+  scope addition for a half-day build.
+- **Deployment.** Not required for submission, and this app currently has no
+  auth or rate limiting — a public URL would expose paid API keys to anyone who
+  found it. Kept local rather than rush that safely.
 
-See [`../SUBMISSION.md`](../SUBMISSION.md) — your repo link, a README with a
-"Decisions & tradeoffs" section, and a recording of a real spoken conversation that
-includes one moment where it fetches data and one where something goes wrong and it
-recovers.
+**What I'd do next with more time**
 
-## Stack
-
-Your choice of language and framework. We're judging judgment and craft — how the agent
-feels to talk to and how honestly it's grounded — not a specific tool.
-
-Good luck, and have fun with it.
+- Add barge-in, closing the remaining gap with a full-duplex realtime pipeline.
+- Before any public deploy: a shared password gate, per-IP rate limiting, and an
+  OpenAI spend limit — all straightforward, just not done yet.
+- Move tool execution/session state off in-memory-per-connection and onto something
+  resumable, so a dropped connection mid-call doesn't strand a caller.
+- Real telemetry instead of a JSONL file once call volume actually justifies it.
+- Tighter ID confirmation — spell back an ambiguous-sounding ID before calling a
+  tool, not just when its shape is obviously wrong (a normalization pass already
+  repairs the common speech-to-text mangling of dashes/spacing, found and fixed
+  during testing).
+- Re-validate the retry/timeout budgets against a real Warp API once a key is
+  available — they're currently tuned to the mock's documented 4–16s/~15% behavior.

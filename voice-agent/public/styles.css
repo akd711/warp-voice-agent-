@@ -1,0 +1,290 @@
+:root {
+  color-scheme: dark;
+  --bg: #090b0f;
+  --panel: #12151b;
+  --border: #232833;
+  --text: #edf1f0;
+  --muted: #8b93a0;
+  --accent: #6bff6b;
+  --accent-dim: #3fcf5a;
+  --accent-contrast: #06170d;
+  --accent-live: #ef4444;
+  --thinking: #f5c451;
+  --user-bubble: #1b1f27;
+  --agent-bubble: #10201a;
+  --tool-chip: #16241c;
+  /* Same colors as above, split into components so glass/glow effects can use
+     them at custom alpha values without introducing any new hues. */
+  --accent-rgb: 107, 255, 107;
+  --panel-rgb: 18, 21, 27;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Ambient glow blobs + a faint technical grid, built entirely from the existing
+   accent green and white-at-low-opacity — no new colors, just atmosphere. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% -8%, rgba(var(--accent-rgb), 0.14), transparent 42%),
+    radial-gradient(circle at 84% 108%, rgba(var(--accent-rgb), 0.10), transparent 46%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 48px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 48px);
+  pointer-events: none;
+}
+
+main {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 3rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+header h1 {
+  font-size: 1.6rem;
+  margin: 0;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.call-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 2.75rem 0 2.25rem;
+}
+
+.mic-orb {
+  position: relative;
+  width: 220px;
+  height: 220px;
+}
+
+/* Two slow-rotating dashed rings behind the button, orbiting in opposite
+   directions — a bit of "AI core" HUD flavor, all in the same accent green. */
+.mic-orb::before,
+.mic-orb::after {
+  content: "";
+  position: absolute;
+  inset: 22px;
+  border-radius: 50%;
+  border: 1px dashed rgba(var(--accent-rgb), 0.22);
+  animation: orbit 14s linear infinite;
+}
+
+.mic-orb::after {
+  inset: 0;
+  border: 1px solid rgba(var(--accent-rgb), 0.1);
+  animation: orbit 22s linear infinite reverse;
+}
+
+@keyframes orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.waveform {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.mic-button {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 0 24px rgba(var(--accent-rgb), 0.25);
+  transition: background 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.mic-button:hover { transform: scale(1.03); }
+
+/* Waiting for the caller to start talking: a slow, calm breathing glow. */
+.mic-button.listening {
+  animation: breathe 2.2s ease-in-out infinite;
+}
+
+/* Real-time feedback while the mic is actually picking up your voice above the
+   speech threshold — a quick shake plus a brighter, tighter glow, so the button
+   visibly "vibrates" in sync with you talking rather than just sitting on a
+   static "listening" state. */
+.mic-button.listening.user-speaking {
+  animation: vibrate 0.28s linear infinite, glow-pulse 0.28s ease-in-out infinite alternate;
+}
+
+.mic-button.thinking {
+  background: var(--thinking);
+  border-color: var(--thinking);
+  color: #1a1200;
+  box-shadow: 0 0 24px rgba(245, 196, 81, 0.35);
+  animation: breathe 1s ease-in-out infinite;
+}
+
+.mic-button.speaking {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 32px rgba(var(--accent-rgb), 0.55);
+}
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.25); transform: scale(1); }
+  50% { box-shadow: 0 0 30px rgba(var(--accent-rgb), 0.45); transform: scale(1.02); }
+}
+
+@keyframes glow-pulse {
+  from { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.45); }
+  to { box-shadow: 0 0 40px rgba(var(--accent-rgb), 0.85); }
+}
+
+@keyframes vibrate {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-2px, 1px); }
+  40% { transform: translate(2px, -1px); }
+  60% { transform: translate(-1px, 2px); }
+  80% { transform: translate(1px, -2px); }
+  100% { transform: translate(0, 0); }
+}
+
+.status {
+  color: var(--muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.02em;
+  min-height: 1.2em;
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript-panel {
+  background: rgba(var(--panel-rgb), 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1.25rem 1.25rem 1.4rem;
+  box-shadow: 0 20px 60px -30px rgba(0, 0, 0, 0.6);
+}
+
+.transcript-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 0.9rem;
+}
+
+.transcript-panel h2::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.9);
+  animation: blink 1.7s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-height: 200px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+}
+
+.transcript::-webkit-scrollbar { width: 6px; }
+.transcript::-webkit-scrollbar-track { background: transparent; }
+.transcript::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.transcript::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+.bubble {
+  padding: 0.65rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  max-width: 85%;
+  line-height: 1.45;
+  font-size: 0.95rem;
+  animation: bubbleIn 0.25s ease-out;
+}
+
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: var(--user-bubble);
+}
+
+.bubble.agent {
+  align-self: flex-start;
+  background: var(--agent-bubble);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  box-shadow: 0 0 24px -16px rgba(var(--accent-rgb), 0.8);
+}
+
+.bubble.tool {
+  align-self: flex-start;
+  background: var(--tool-chip);
+  border-color: rgba(var(--accent-rgb), 0.15);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.bubble.error {
+  align-self: center;
+  background: #2a1212;
+  border-color: #5c2323;
+  color: #ffb4b4;
+  font-size: 0.85rem;
+}
+
+.bubble a {
+  color: var(--accent);
+  font-weight: 600;
+}

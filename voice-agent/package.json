@@ -1,0 +1,22 @@
+{
+  "name": "warp-voice-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser voice support agent for Warp freight, grounded in the local mock API.",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "smoke": "node scripts/smoke-tools.js",
+    "stats": "node src/logging/stats.js",
+    "transcripts": "node src/logging/transcripts.js"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "openai": "^4.68.0",
+    "ws": "^8.18.0"
+  }
+}

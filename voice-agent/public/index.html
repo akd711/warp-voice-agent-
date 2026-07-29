@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Warp AI — Real-time freight support</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Warp AI : Real-time freight support, whenever you need it.</h1>
+    </header>
+
+    <section class="call-panel">
+      <div class="mic-orb">
+        <canvas id="waveform" class="waveform" width="220" height="220" aria-hidden="true"></canvas>
+        <button id="callButton" class="mic-button" aria-label="Start conversation">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor" aria-hidden="true">
+            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3z"/>
+            <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V20H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-2.08A7 7 0 0 0 19 11z"/>
+          </svg>
+        </button>
+      </div>
+      <p id="statusText" class="status">Click to start a conversation</p>
+    </section>
+
+    <section class="transcript-panel">
+      <h2>Live transcript</h2>
+      <div id="transcript" class="transcript"></div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
